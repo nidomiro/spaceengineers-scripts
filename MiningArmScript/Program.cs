@@ -72,6 +72,9 @@ namespace IngameScript
             // It's recommended to set Runtime.UpdateFrequency 
             // here, which will allow your script to run itself without a 
             // timer block.
+
+            GridTerminalSystem.GetBlocksOfType(pistons, block => block.IsSameConstructAs(Me));
+
         }
 
         public void Save()
@@ -88,8 +91,6 @@ namespace IngameScript
         {
             if (_commandLine.TryParse(argument))
             {
-                GridTerminalSystem.GetBlocksOfType(pistons, block => block.IsSameConstructAs(Me));
-
                 var newTargetState = _commandLine.Argument(0);
                 if (String.Equals(newTargetState, "park", StringComparison.OrdinalIgnoreCase))
                 {
