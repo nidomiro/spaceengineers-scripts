@@ -42,6 +42,24 @@ namespace IngameScript
         //
         // to learn more about ingame scripts.
 
+        enum MiningArmState {
+            #region mdk preserve
+            PARK,
+            DEPLOYED,
+            DRILLING,
+            UNKNOWN
+            #endregion
+        }
+
+        List<IMyPistonBase> pistons = new List<IMyPistonBase>();
+        IMyMotorStator rotor = null;
+        List<IMyShipDrill> drills = new List<IMyShipDrill>();
+        List<IMyMotorStator> hinges = new List<IMyMotorStator>();
+        List<IMyShipDrill> landingGears = new List<IMyShipDrill>();
+
+        MyCommandLine _commandLine = new MyCommandLine();
+        MiningArmState targetState = MiningArmState.UNKNOWN;
+
         public Program()
         {
             // The constructor, called only once every session and
@@ -68,15 +86,36 @@ namespace IngameScript
 
         public void Main(string argument, UpdateType updateSource)
         {
-            // The main entry point of the script, invoked every time
-            // one of the programmable block's Run actions are invoked,
-            // or the script updates itself. The updateSource argument
-            // describes where the update came from. Be aware that the
-            // updateSource is a  bitfield  and might contain more than 
-            // one update type.
-            // 
-            // The method itself is required, but the arguments above
-            // can be removed if not needed.
+            if (_commandLine.TryParse(argument))
+            {
+                GridTerminalSystem.GetBlocksOfType(pistons, block => block.IsSameConstructAs(Me));
+
+                var newTargetState = _commandLine.Argument(0);
+                if (String.Equals(newTargetState, "park", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetState = MiningArmState.PARK;
+                }
+                else if (String.Equals(newTargetState, "deploy", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetState = MiningArmState.DEPLOYED;
+                }
+                else if (String.Equals(newTargetState, "drill", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetState = MiningArmState.DRILLING;
+                }
+                else
+                {
+                    Echo("Unknown Command: " + newTargetState);
+                }
+                
+            }
+            Echo("TagetState: " + targetState);
+
+
+            
+
+
+            Echo("Executed instructions: " + Runtime.CurrentInstructionCount + "/" + Runtime.MaxInstructionCount);
         }
     }
 }
