@@ -49,7 +49,7 @@ namespace IngameScript
             DRILLING
         }
 
-        enum MiningArmState
+        enum MiningArmStateEnum
         {
             UNKNOWN,
             PARKING,
@@ -61,16 +61,56 @@ namespace IngameScript
             RETRACTING
         }
 
-        List<IMyPistonBase> pistons = new List<IMyPistonBase>();
-        IMyMotorStator drillRotor = null;
-        List<IMyShipDrill> drills = new List<IMyShipDrill>();
-        List<IMyMotorStator> hinges = new List<IMyMotorStator>();
-        IMyLandingGear landingGearDrillHead = null;
-        IMyLandingGear landingGearMiningArmPark = null;
+        struct MiningArmState
+        {
+            public MiningArmStateEnum state;
+            public float hingeAngle;
+
+            public MiningArmState(MiningArmStateEnum state, float hingeAngle)
+            {
+                this.state = state;
+                this.hingeAngle = hingeAngle ;
+            }
+
+            public MiningArmState(MiningArmState? value = null)
+            {
+                this.state = value?.state ?? MiningArmStateEnum.UNKNOWN;
+                this.hingeAngle = value?.hingeAngle ?? float.NaN;
+            }
+
+            public override string ToString()
+            {
+                return $"MiningArmState {{ state: {state}, hingeAngle: {hingeAngle} }}";
+            }
+
+        }
+
+        class MiningArmBlocks
+        {
+            public List<IMyPistonBase> pistons = new List<IMyPistonBase>();
+            public IMyMotorStator drillRotor = null;
+            public List<IMyShipDrill> drills = new List<IMyShipDrill>();
+            public List<IMyMotorStator> hinges = new List<IMyMotorStator>();
+            public IMyLandingGear landingGearDrillHead = null;
+            public IMyLandingGear landingGearMiningArmPark = null;
+
+            public IMyMotorStator referenceHinge
+            {
+                get
+                {
+                    return hinges[0];
+                }
+            }
+        }
+
+        MiningArmBlocks miningArmBlocks = new MiningArmBlocks();
+
+       
 
         MyCommandLine _commandLine = new MyCommandLine();
         MiningArmTargetState targetState = MiningArmTargetState.UNDEFINED;
-        MiningArmState currentState = MiningArmState.UNKNOWN;
+        MiningArmState previousState = new MiningArmState();
+        MiningArmState currentState = new MiningArmState();
 
         public Program()
         {
@@ -85,14 +125,14 @@ namespace IngameScript
             // here, which will allow your script to run itself without a 
             // timer block.
 
-            Runtime.UpdateFrequency = UpdateFrequency.Update10;
+            Runtime.UpdateFrequency = UpdateFrequency.Update100;
 
             var prefix = "BMT_";
             var miningArmGroup = GridTerminalSystem.GetBlockGroupWithName(prefix + "MiningArmGroup");
             if(miningArmGroup != null)
             {
                 // get Pistons
-                miningArmGroup.GetBlocksOfType(pistons);
+                miningArmGroup.GetBlocksOfType(miningArmBlocks.pistons);
 
                 // get DrillHead Rotor and Arm Hinges
                 var rotorsAndHinges = new List<IMyMotorStator>();
@@ -101,11 +141,11 @@ namespace IngameScript
                 {
                     if (rotor.CustomName.Contains("[drills]"))
                     {
-                        drillRotor = rotor;
+                        miningArmBlocks.drillRotor = rotor;
                     }
                     else if (rotor.CubeGrid.Equals(Me.CubeGrid))
                     {
-                        hinges.Add(rotor);
+                        miningArmBlocks.hinges.Add(rotor);
                     }
                     //Echo($"Rotor (Name): {rotor.Name}");
                     //Echo($"Rotor (DisplayName): {rotor.DisplayName}");
@@ -115,7 +155,7 @@ namespace IngameScript
                 }
 
                 // get Drills
-                miningArmGroup.GetBlocksOfType(drills);
+                miningArmGroup.GetBlocksOfType(miningArmBlocks.drills);
 
                 // get LandingGears
                 var landingGears = new List<IMyLandingGear>();
@@ -124,11 +164,11 @@ namespace IngameScript
                 {
                     if (landingGear.CustomName.Contains("[drills]"))
                     {
-                        landingGearDrillHead = landingGear;
+                        miningArmBlocks.landingGearDrillHead = landingGear;
                     }
                     else if (landingGear.CustomName.Contains("[arm]"))
                     {
-                        landingGearMiningArmPark = landingGear;
+                        miningArmBlocks.landingGearMiningArmPark = landingGear;
                     }
                 }
 
@@ -156,6 +196,9 @@ namespace IngameScript
 
         public void Main(string argument, UpdateType updateSource)
         {
+            Echo($"Time since last execute: {Runtime.TimeSinceLastRun}");
+            previousState = currentState;
+
             if (_commandLine.TryParse(argument))
             {
                 var newTargetState = _commandLine.Argument(0);
@@ -166,7 +209,7 @@ namespace IngameScript
                 else if (String.Equals(newTargetState, "deploy", StringComparison.OrdinalIgnoreCase))
                 {
                     targetState = MiningArmTargetState.DEPLOYED;
-                    foreach (var hinge in hinges)
+                    foreach (var hinge in miningArmBlocks.hinges)
                     {
                         hinge.TargetVelocityRPM = -1 * hinge.TargetVelocityRPM;
                             }
@@ -187,9 +230,9 @@ namespace IngameScript
 
             Echo("TagetState:   " + targetState);
             Echo("CurrentState: " + currentState);
-            Echo("drillRotorOrientation: " + drillRotor.Orientation);
-            Echo("ArmGridPosition: " + hinges[0].TopGrid.GetPosition().ToString());
-            Echo("Hinge Angle: " + hinges[0].Angle);
+            Echo("drillRotorOrientation: " + miningArmBlocks.drillRotor.Orientation);
+            Echo("ArmGridPosition: " + miningArmBlocks.referenceHinge.TopGrid.GetPosition().ToString());
+            Echo("Hinge Angle: " + miningArmBlocks.referenceHinge.Angle);
 
 
             
@@ -201,20 +244,40 @@ namespace IngameScript
 
         private MiningArmState DetectCurrentState()
         {
-            var refHinge = hinges[0];
+            return new MiningArmState(
+                DetectCurrentStateEnum(),
+                miningArmBlocks.referenceHinge.Angle
+                );
+        }
+
+        private MiningArmStateEnum DetectCurrentStateEnum()
+        {
+            var refHinge = miningArmBlocks.referenceHinge;
             var hingeMinLimit = Math.Min(Math.Abs(refHinge.LowerLimitRad), Math.Abs(refHinge.UpperLimitRad));
             var hingeMaxLimit = Math.Max(Math.Abs(refHinge.LowerLimitRad), Math.Abs(refHinge.UpperLimitRad));
            
             if (Math.Abs(refHinge.Angle - hingeMinLimit) < 0.01)
             {
-                return MiningArmState.DEPLOYED;
+                return MiningArmStateEnum.DEPLOYED;
             } 
             else if ((Math.Abs(refHinge.Angle - hingeMaxLimit) < 0.01))
             {
-                return MiningArmState.PARKED;
+                return MiningArmStateEnum.PARKED;
+            }
+            else if (Math.Abs(refHinge.Angle) >= (hingeMinLimit - 0.01)  && Math.Abs(refHinge.Angle) <= (hingeMaxLimit + 0.01)) 
+            {
+                var direction = miningArmBlocks.referenceHinge.Angle - previousState.hingeAngle;
+
+                if (Math.Abs(refHinge.LowerLimitRad) > Math.Abs(refHinge.UpperLimitRad))
+                {
+                    direction *= -1;
+                }
+                
+
+                return (direction > 0 )? MiningArmStateEnum.PARKING : MiningArmStateEnum.DEPLOYING; // TODO: Differentiate between PARKING and DEPLOYING
             }
             
-            return MiningArmState.UNKNOWN;
+            return MiningArmStateEnum.UNKNOWN;
         }
     }
 }
